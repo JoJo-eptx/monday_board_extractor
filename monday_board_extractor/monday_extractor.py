@@ -35,7 +35,7 @@ class MondayColumnExtractor(BaseExtractor):
             "Content-Type": "application/json"
         }
 
-    def _build_query(self) -> str:
+    def _build_query_0(self) -> str:
         """
         Build the GraphQL query for retrieving board column data.
 
@@ -49,6 +49,7 @@ class MondayColumnExtractor(BaseExtractor):
             name
             items_page {{
                 items {{
+                    id
                     column_values {{
                         id
                         text
@@ -57,6 +58,53 @@ class MondayColumnExtractor(BaseExtractor):
             }}
           }}
         }}
+        '''
+    
+    def _build_query_1(self) -> str:
+        board_ids_str = ', '.join(map(str, self.board_ids))
+        return f'''
+            query {{
+                boards(ids: [{board_ids_str}]) {{
+                    name
+                    columns {{
+                        id
+                        title
+                    }}
+                    items_page {{
+                        items {{
+                            id
+                            column_values {{
+                                id
+                                text
+                            }}
+                        }}
+                    }}
+                }}
+            }}
+    '''
+
+    def _build_query(self) -> str:
+        board_ids_str = ', '.join(map(str, self.board_ids))
+        return f'''
+            query {{
+                boards(ids: [{board_ids_str}]) {{
+                    name
+                    columns {{
+                        id
+                        title
+                    }}
+                    items_page {{
+                        items {{
+                            id
+                            name  # This is the "Item" column
+                            column_values {{
+                                id
+                                text
+                            }}
+                        }}
+                    }}
+                }}
+            }}
         '''
 
     def _fetch_data(self):
@@ -83,6 +131,16 @@ class MondayColumnExtractor(BaseExtractor):
 
     @staticmethod
     def _extract_to_dataframe(items):
+        rows = []
+        for item in items:
+            column_values = item.get('column_values', [])
+            row_dict = {col['id']: col.get('text') for col in column_values}
+            row_dict['Item'] = item.get('name')  # Add "Item" column explicitly
+            rows.append(row_dict)
+        return pd.DataFrame(rows)
+
+    @staticmethod
+    def _extract_to_dataframe_0(items):
         """
         Convert a list of item dictionaries to a pandas DataFrame.
 
@@ -98,7 +156,7 @@ class MondayColumnExtractor(BaseExtractor):
             rows.append(row_dict)
         return pd.DataFrame(rows)
 
-    def extract(self) -> List[BoardData]:
+    def extract_0(self) -> List[BoardData]:
         """
         Extract and process board data from the Monday.com API.
 
@@ -113,6 +171,26 @@ class MondayColumnExtractor(BaseExtractor):
             name = board['name']
             items = board['items_page']['items']
             df = self._extract_to_dataframe(items)
+            result.append(BoardData(name=name, data=df))
+
+        return result
+    
+    def extract(self) -> List[BoardData]:
+        data = self._fetch_data()
+        boards = data['data']['boards']
+        result = []
+
+        for board in boards:
+            name = board['name']
+            items = board['items_page']['items']
+            df = self._extract_to_dataframe(items)
+
+            # Get column ID → title mapping
+            column_map = {col['id']: col['title'] for col in board.get('columns', [])}
+
+            # Rename columns to user-friendly labels
+            df.rename(columns=column_map, inplace=True)
+
             result.append(BoardData(name=name, data=df))
 
         return result
