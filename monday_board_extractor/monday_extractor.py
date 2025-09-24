@@ -93,7 +93,7 @@ class MondayColumnExtractor(BaseExtractor):
                         id
                         title
                     }}
-                    items_page {{
+                    items_page (limit: 500) {{
                         items {{
                             id
                             name  # This is the "Item" column
